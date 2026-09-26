@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: novabank-postgres
+    environment:
+      POSTGRES_USER: novabank
+      POSTGRES_PASSWORD: novabank
+    ports:
+      - "5433:5432"
+    volumes:
+      - novabank-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novabank"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  customer-service:
+    build:
+      context: .
+      dockerfile: customer-service/Dockerfile
+    container_name: novabank-customer-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/customer_db
+      SPRING_DATASOURCE_USERNAME: novabank
+      SPRING_DATASOURCE_PASSWORD: novabank
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  account-service:
+    build:
+      context: .
+      dockerfile: account-service/Dockerfile
+    container_name: novabank-account-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/account_db
+      SPRING_DATASOURCE_USERNAME: novabank
+      SPRING_DATASOURCE_PASSWORD: novabank
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  card-service:
+    build:
+      context: .
+      dockerfile: card-service/Dockerfile
+    container_name: novabank-card-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/card_db
+      SPRING_DATASOURCE_USERNAME: novabank
+      SPRING_DATASOURCE_PASSWORD: novabank
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Not started by `docker compose up` - run on demand once the three services are healthy:
+  #   docker compose run --rm data-generator
+  data-generator:
+    build:
+      context: .
+      dockerfile: data-generator/Dockerfile
+    container_name: novabank-data-generator
+    profiles: ["tools"]
+    environment:
+      GENERATOR_BASEURL_CUSTOMERSERVICE: http://customer-service:8081
+      GENERATOR_BASEURL_ACCOUNTSERVICE: http://account-service:8082
+      GENERATOR_BASEURL_CARDSERVICE: http://card-service:8083
+    depends_on:
+      customer-service:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+      card-service:
+        condition: service_healthy
+
+volumes:
+  novabank-pgdata:

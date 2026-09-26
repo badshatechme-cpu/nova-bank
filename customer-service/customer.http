@@ -1,0 +1,29 @@
+### Create a customer
+POST http://localhost:8081/api/v1/customers
+Content-Type: application/json
+
+{
+  "fullName": "Fatima Al Marri",
+  "email": "fatima.almarri@example.com",
+  "mobile": "+971501234567",
+  "dateOfBirth": "1990-05-14",
+  "nationality": "ARE"
+}
+
+### Get a customer by id (replace {{customerId}} with an id returned above)
+GET http://localhost:8081/api/v1/customers/{{customerId}}
+
+### Search customers by name or email, paged
+GET http://localhost:8081/api/v1/customers?search=fatima&page=0&size=10
+
+### Validation failure example (missing required fields)
+POST http://localhost:8081/api/v1/customers
+Content-Type: application/json
+
+{
+  "fullName": "",
+  "email": "not-an-email"
+}
+
+### Not found example
+GET http://localhost:8081/api/v1/customers/00000000-0000-0000-0000-000000000000

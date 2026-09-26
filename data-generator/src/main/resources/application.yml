@@ -1,0 +1,16 @@
+spring:
+  main:
+    web-application-type: none
+  application:
+    name: data-generator
+
+logging:
+  level:
+    com.novabank.generator: INFO
+
+generator:
+  customer-count: 50
+  base-url:
+    customer-service: http://localhost:8081
+    account-service: http://localhost:8082
+    card-service: http://localhost:8083

@@ -1,0 +1,9 @@
+target/
+*.class
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Leftover duplicate of the root CLAUDE.md/BUILD_PLAN.md from initial project setup
+files/

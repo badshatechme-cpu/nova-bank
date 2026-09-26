@@ -1,0 +1,42 @@
+### There is no "create card" endpoint yet (cards are provisioned by Phase 6 seeding).
+### To try these requests against a running card-service backed by docker-compose Postgres,
+### seed one row first, e.g.:
+###
+### docker exec -it novabank-postgres psql -U novabank -d card_db -c "
+###   INSERT INTO cards (id, customer_id, linked_account_id, type, scheme, masked_pan, last4,
+###                       expiry_month, expiry_year, status, daily_limit, currency, block_reason)
+###   VALUES ('77777777-7777-7777-7777-777777777777', '22222222-2222-2222-2222-222222222222',
+###           '11111111-1111-1111-1111-111111111111', 'DEBIT', 'VISA', '4111 **** **** 1234', '1234',
+###           12, 2029, 'ACTIVE', 5000.00, 'AED', NULL);
+### "
+
+### List a customer's cards
+GET http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards
+
+### Get one card (masked PAN only - the full PAN is never stored or returned)
+GET http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards/77777777-7777-7777-7777-777777777777
+
+### Ownership check: wrong customer id returns 404
+GET http://localhost:8083/api/v1/customers/99999999-9999-9999-9999-999999999999/cards/77777777-7777-7777-7777-777777777777
+
+### Block the card - requires a reason
+POST http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards/77777777-7777-7777-7777-777777777777/block
+Content-Type: application/json
+
+{
+  "reason": "Reported lost by customer"
+}
+
+### Blocking an already-blocked card fails with 422
+POST http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards/77777777-7777-7777-7777-777777777777/block
+Content-Type: application/json
+
+{
+  "reason": "Second attempt"
+}
+
+### Unblock the card
+POST http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards/77777777-7777-7777-7777-777777777777/unblock
+
+### Unblocking a card that isn't blocked fails with 422
+POST http://localhost:8083/api/v1/customers/22222222-2222-2222-2222-222222222222/cards/77777777-7777-7777-7777-777777777777/unblock
