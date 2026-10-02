@@ -16,6 +16,12 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: 30
+    // Hard ceiling on daily ingestion cost. This dev cluster generates well under
+    // 0.1GB/day in practice — 1GB/day leaves headroom while capping worst-case exposure
+    // if logging volume ever spikes unexpectedly.
+    workspaceCapping: {
+      dailyQuotaGb: 1
+    }
   }
 }
 

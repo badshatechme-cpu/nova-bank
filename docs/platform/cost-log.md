@@ -54,10 +54,20 @@ in actual spend here)_
 | Outbound public IP `nb-dev-aks-outbound-ip` | Standard SKU | ~$3-4/month | Needed so Postgres's firewall can allow a known, stable address for pod traffic |
 | Federated credentials (×3) | — | $0 | Free |
 | Role assignments (×2) | — | $0 | Free |
-| Container Insights / Log Analytics ingestion | Pay-as-you-go | ~$2-10/month | Depends on log volume from a 3-pod cluster; first real use of the Stage 1 workspace |
-| **Stage 4 total (running continuously)** | | **~$77-86/month** | Much lower in practice if the cluster is stopped outside active work sessions |
+| Container Insights / Log Analytics ingestion | Pay-as-you-go, 1GB/day hard cap | ~$0-5/month | Observed ~0.05GB/day in practice — well under the cap. Daily quota added after a cost audit found ingestion was uncapped |
+| Ingress controller's public IP | Standard SKU, $0.005/hr | ~$3.65/month | **Found during a post-deployment cost audit** — missed in the original estimate. Separate from the explicit outbound IP; this one is auto-created by the App Routing add-on's `LoadBalancer` Service |
+| AKS's Standard Load Balancer | Base rate | ~$18/month | **Also found during the audit.** Required by AKS itself — handles both outbound SNAT for the cluster and inbound routing for the ingress. Not something we chose; comes with running AKS with a public ingress at all |
+| **Stage 4 total (running continuously)** | | **~$99-113/month** | Revised up from the original ~$77-86 estimate after the audit. Much lower in practice if the cluster is stopped outside active work sessions — the two items above don't stop billing when you `stop.sh` (they're tied to the cluster's existence, not its power state), but the node and Postgres do |
 
 **Observed:** _(fill in after a billing cycle)_
+
+**Audit note (post-Stage 4):** every SKU here was re-checked against Azure's live retail
+pricing and the subscription's actual allowed-SKU list — Postgres (`Standard_B1ms`) and
+the AKS node (`Standard_D2als_v6`) are both already the cheapest valid options; no
+cheaper tier exists for Log Analytics, ACR, or Key Vault either. The one real
+miss was the two line items above, now added. Stage 1's $25/month budget alert will fire
+once billing data catches up — it's correctly flagging that actual continuous-run cost
+now exceeds that original threshold, not a false alarm.
 
 ## Running cumulative total
 
@@ -66,4 +76,4 @@ in actual spend here)_
 | 1 — Foundations | ~$0 | ~$0 |
 | 2 — ACR + build pipeline | ~$5 | ~$5 |
 | 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
-| 4 — AKS and first deployment | ~$77-86 (if left running) | ~$94-111 |
+| 4 — AKS and first deployment | ~$99-113 (if left running) | ~$116-138 |
