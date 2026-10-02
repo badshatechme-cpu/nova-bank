@@ -12,6 +12,12 @@ param ownerEmail string
 @description('Monthly budget amount in USD that triggers the 50/80/100% alerts.')
 param monthlyBudgetAmount int
 
+@description('GitHub repository in "owner/repo" form, used for the OIDC federated credential subject.')
+param githubRepo string
+
+@description('Branch allowed to deploy via the GitHub Actions identity.')
+param githubBranch string = 'main'
+
 var tags = {
   project: 'novabank'
   env: environmentName
@@ -45,5 +51,31 @@ module budget 'modules/budget.bicep' = {
   }
 }
 
+module githubIdentity 'modules/githubIdentity.bicep' = {
+  name: 'githubIdentity'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    identityName: 'nb-${environmentName}-id-github'
+    githubRepo: githubRepo
+    githubBranch: githubBranch
+  }
+}
+
+module containerRegistry 'modules/containerRegistry.bicep' = {
+  name: 'containerRegistry'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    registryName: 'nbdevacr${uniqueString(rg.id)}'
+    githubIdentityPrincipalId: githubIdentity.outputs.principalId
+  }
+}
+
 output resourceGroupName string = rg.name
 output logAnalyticsWorkspaceId string = logAnalytics.outputs.workspaceId
+output acrLoginServer string = containerRegistry.outputs.loginServer
+output acrName string = containerRegistry.outputs.registryName
+output githubIdentityClientId string = githubIdentity.outputs.clientId

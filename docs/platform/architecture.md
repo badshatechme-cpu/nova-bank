@@ -35,3 +35,37 @@ flowchart TB
 ### Naming and tagging applied
 - Convention: `nb-<env>-<resource-abbreviation>`
 - Tags on every resource: `project=novabank`, `env=dev`, `owner=badsha`, `managedBy=bicep`
+
+## Stage 2 — Container registry + build pipeline
+
+```mermaid
+flowchart LR
+    gh[GitHub Actions<br/>push to main]
+    oidc{{token.actions.githubusercontent.com}}
+    id[Managed Identity<br/>nb-dev-id-github]
+    acr[(Container Registry<br/>nbdevacr&lt;suffix&gt;<br/>Basic SKU, admin disabled)]
+
+    gh -- "OIDC token, no secret" --> oidc
+    oidc -- "federated credential:<br/>repo:badshatechme-cpu/nova-bank:ref:refs/heads/main" --> id
+    id -- "AcrPush only, scoped to this registry" --> acr
+```
+
+| Resource | Name | Purpose |
+|---|---|---|
+| Container Registry | `nbdevacr<unique>` | Stores the 3 service images; Basic SKU, admin user disabled |
+| User-assigned managed identity | `nb-dev-id-github` | Stands in for GitHub Actions in Azure — no stored credential, ever |
+| Federated identity credential | `github-actions-main` (on the identity) | Lets only workflow runs triggered by a push to `main` on `badshatechme-cpu/nova-bank` exchange a GitHub OIDC token for an Azure AD token |
+| Role assignment | `AcrPush` → scoped to the registry | The identity can push/pull images on this one registry and nothing else — can't touch any other resource in the subscription |
+
+**Pipeline:** `.github/workflows/build.yml` builds `customer-service`, `account-service`, and `card-service` on every push to `main`, tags each image with the commit SHA, and pushes to ACR via `az acr login` (using the OIDC-authenticated identity) + `docker push`.
+
+**GitHub repo variables** (not secrets — safe by design since there's no credential behind them, only identifiers used to request a short-lived token): `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`.
+
+### Decisions
+| Decision | Why | Trade-off |
+|---|---|---|
+| User-assigned managed identity, not an Entra ID app registration | Managed identities (and their federated credentials) are native ARM/Bicep resources; app registrations are Microsoft Graph objects that need a separate extension or a deployment-script workaround to manage as code | Slightly less common pattern in older GitHub OIDC tutorials, which mostly show app registrations |
+| Federated credential subject locked to `ref:refs/heads/main` | Only a push-triggered run on `main` can authenticate as this identity — a PR build or a run on any other branch gets no token | Need a second federated credential (or a broader subject) later if we want PR-triggered builds |
+| `AcrPush` scoped to the registry resource, not the resource group | Least privilege: this identity's blast radius is "can push/pull images to this one registry" | If a second registry is ever added, it needs its own role assignment |
+| ACR admin user disabled | No static admin password exists to leak; every push is OIDC-authenticated | Can't `docker login` with a username/password for quick manual testing — use `az acr login` instead |
+| ACR Basic SKU | Cheapest tier (~$5/month); no geo-replication or private endpoint support needed yet | Upgrade to Premium only if Stage 7 needs a private endpoint on the registry |
