@@ -1,0 +1,16 @@
+image:
+  repository: card-service
+
+containerPort: 8083
+
+serviceAccount:
+  name: card-service
+  clientId: "a54fd133-f943-4d98-87f4-8369c17e4f16"
+
+database:
+  name: card_db
+  username: card_app
+  passwordSecretName: card-db-password
+
+ingress:
+  host: card.20.233.234.238.nip.io

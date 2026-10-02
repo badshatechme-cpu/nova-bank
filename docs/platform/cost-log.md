@@ -45,6 +45,20 @@ in actual spend here)_
 
 **Observed:** _(fill in after a billing cycle)_
 
+## Stage 4 — AKS and first deployment
+
+| Resource | SKU | Expected monthly cost | Notes |
+|---|---|---|---|
+| AKS cluster `nb-dev-aks` | Free tier control plane | $0 | Free tier has no SLA but no charge |
+| Node pool | 1x `Standard_D2als_v6` | ~$72/month if run continuously | **Revised up from the ~$30/month Burstable estimate** — `Standard_B2s` wasn't permitted on this subscription (zero quota for the whole Burstable family on a fresh subscription); this was the smallest allowed general-purpose size. Billed hourly — `scripts/stop.sh`/`start.sh` matter a lot here |
+| Outbound public IP `nb-dev-aks-outbound-ip` | Standard SKU | ~$3-4/month | Needed so Postgres's firewall can allow a known, stable address for pod traffic |
+| Federated credentials (×3) | — | $0 | Free |
+| Role assignments (×2) | — | $0 | Free |
+| Container Insights / Log Analytics ingestion | Pay-as-you-go | ~$2-10/month | Depends on log volume from a 3-pod cluster; first real use of the Stage 1 workspace |
+| **Stage 4 total (running continuously)** | | **~$77-86/month** | Much lower in practice if the cluster is stopped outside active work sessions |
+
+**Observed:** _(fill in after a billing cycle)_
+
 ## Running cumulative total
 
 | Stage | Expected incremental cost | Cumulative expected |
@@ -52,3 +66,4 @@ in actual spend here)_
 | 1 — Foundations | ~$0 | ~$0 |
 | 2 — ACR + build pipeline | ~$5 | ~$5 |
 | 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
+| 4 — AKS and first deployment | ~$77-86 (if left running) | ~$94-111 |

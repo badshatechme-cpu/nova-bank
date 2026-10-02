@@ -1,0 +1,54 @@
+name: Deploy to AKS
+
+on:
+  workflow_run:
+    workflows: ["Build and push images"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: az aks get-credentials --name nb-dev-aks --resource-group nb-dev-rg --overwrite-existing
+
+      - name: Ensure namespace exists
+        run: kubectl create namespace novabank --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy customer-service
+        run: |
+          helm upgrade --install customer-service deploy/helm/novabank-service \
+            -f deploy/helm/novabank-service/values-customer.yaml \
+            --set image.tag=${{ github.event.workflow_run.head_sha }} \
+            --namespace novabank
+
+      - name: Deploy account-service
+        run: |
+          helm upgrade --install account-service deploy/helm/novabank-service \
+            -f deploy/helm/novabank-service/values-account.yaml \
+            --set image.tag=${{ github.event.workflow_run.head_sha }} \
+            --namespace novabank
+
+      - name: Deploy card-service
+        run: |
+          helm upgrade --install card-service deploy/helm/novabank-service \
+            -f deploy/helm/novabank-service/values-card.yaml \
+            --set image.tag=${{ github.event.workflow_run.head_sha }} \
+            --namespace novabank

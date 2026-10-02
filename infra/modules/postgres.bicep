@@ -17,6 +17,9 @@ param administratorPassword string
 @description('Single public IP allowed through the firewall (your current IP).')
 param allowedClientIp string
 
+@description('AKS cluster\'s outbound public IP, allowed through the firewall so pods can reach the database.')
+param aksOutboundIp string
+
 @description('Database names to create on the server.')
 param databaseNames array = [
   'customer_db'
@@ -55,6 +58,15 @@ resource firewallRule 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2
   properties: {
     startIpAddress: allowedClientIp
     endIpAddress: allowedClientIp
+  }
+}
+
+resource aksFirewallRule 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
+  parent: server
+  name: 'allow-aks-outbound-ip'
+  properties: {
+    startIpAddress: aksOutboundIp
+    endIpAddress: aksOutboundIp
   }
 }
 

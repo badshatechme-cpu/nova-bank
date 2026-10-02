@@ -1,0 +1,42 @@
+# Defaults shared by every service. Each values-<service>.yaml overrides what differs.
+
+namespace: novabank
+
+image:
+  registry: nbdevacrzoyuqrptm2qia.azurecr.io
+  repository: "" # e.g. customer-service
+  tag: latest # overridden at deploy time with the commit SHA
+
+replicaCount: 1
+
+containerPort: 8080 # overridden per service
+
+resources:
+  # Kept low to fit this dev cluster's single small node alongside its system add-ons
+  # (ingress controller, Container Insights, CSI driver, workload identity webhook),
+  # which already consume ~95% of the node's 2 vCPUs on their own.
+  requests:
+    cpu: 20m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+serviceAccount:
+  name: "" # e.g. customer-service — must match the federated credential's subject
+  clientId: "" # the service's managed identity client ID (workload identity)
+
+azure:
+  tenantId: "357b06c3-23ee-408a-a70b-57eaddc48aad"
+  keyVaultName: "nbdevkvzoyuqrptm2qia"
+
+database:
+  host: "nb-dev-psql.postgres.database.azure.com"
+  port: 5432
+  name: "" # e.g. customer_db
+  username: "" # e.g. customer_app
+  passwordSecretName: "" # the Key Vault secret name, e.g. customer-db-password
+
+ingress:
+  host: "" # e.g. customer.<ingress-ip>.nip.io
+  className: webapprouting.kubernetes.azure.com
