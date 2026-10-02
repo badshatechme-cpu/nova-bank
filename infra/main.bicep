@@ -97,6 +97,18 @@ module githubIdentity 'modules/githubIdentity.bicep' = {
   }
 }
 
+module aks 'modules/aks.bicep' = {
+  name: 'aks'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    clusterName: 'nb-${environmentName}-aks'
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+    githubIdentityPrincipalId: githubIdentity.outputs.principalId
+  }
+}
+
 module containerRegistry 'modules/containerRegistry.bicep' = {
   name: 'containerRegistry'
   scope: rg
@@ -105,6 +117,7 @@ module containerRegistry 'modules/containerRegistry.bicep' = {
     tags: tags
     registryName: 'nbdevacr${uniqueString(rg.id)}'
     githubIdentityPrincipalId: githubIdentity.outputs.principalId
+    aksKubeletIdentityObjectId: aks.outputs.kubeletIdentityObjectId
   }
 }
 
@@ -145,6 +158,8 @@ module customerServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-customer'
     vaultName: keyVault.outputs.vaultName
     secretName: 'customer-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'customer-service'
   }
 }
 
@@ -157,6 +172,8 @@ module accountServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-account'
     vaultName: keyVault.outputs.vaultName
     secretName: 'account-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'account-service'
   }
 }
 
@@ -169,6 +186,8 @@ module cardServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-card'
     vaultName: keyVault.outputs.vaultName
     secretName: 'card-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'card-service'
   }
 }
 
@@ -180,3 +199,8 @@ output githubIdentityClientId string = githubIdentity.outputs.clientId
 output postgresFqdn string = postgres.outputs.fqdn
 output keyVaultName string = keyVault.outputs.vaultName
 output keyVaultUri string = keyVault.outputs.vaultUri
+output aksClusterName string = aks.outputs.clusterName
+output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl
+output customerIdentityClientId string = customerServiceIdentity.outputs.clientId
+output accountIdentityClientId string = accountServiceIdentity.outputs.clientId
+output cardIdentityClientId string = cardServiceIdentity.outputs.clientId
