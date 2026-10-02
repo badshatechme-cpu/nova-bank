@@ -282,8 +282,27 @@ endpoints return `200`.
 
 ### Seed data against the AKS deployment
 
-Run the existing data-generator image locally, pointed at the ingress hostnames instead
-of the docker-compose network:
+**Option A — in-cluster Job (recommended, no local Docker needed):**
+
+```bash
+# 1. Build and push the data-generator image via GitHub Actions
+gh workflow run build-data-generator.yml --ref main
+
+# 2. Once it completes, get the image tag (the commit SHA it built from)
+TAG=$(git rev-parse HEAD)
+
+# 3. Run it as a one-off Job inside the cluster, using in-cluster DNS
+sed "s/IMAGE_TAG/$TAG/" deploy/jobs/seed-data-job.yaml | kubectl apply -f -
+
+# 4. Watch it run
+kubectl logs -f job/seed-data -n novabank
+
+# 5. Clean up once done
+kubectl delete job seed-data -n novabank
+```
+
+**Option B — local Docker, pointed at the public ingress** (if your local Docker is
+working):
 
 ```bash
 docker run --rm \

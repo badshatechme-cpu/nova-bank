@@ -1,0 +1,24 @@
+# One-off Job to seed the AKS deployment with synthetic data, run in-cluster so it can
+# reach the services over their internal DNS names instead of going through ingress.
+# Usage: substitute IMAGE_TAG with the data-generator image tag you built, e.g.:
+#   sed 's/IMAGE_TAG/<tag>/' deploy/jobs/seed-data-job.yaml | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-data
+  namespace: novabank
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: data-generator
+          image: nbdevacrzoyuqrptm2qia.azurecr.io/data-generator:IMAGE_TAG
+          env:
+            - name: GENERATOR_BASEURL_CUSTOMERSERVICE
+              value: http://customer-service.novabank.svc.cluster.local
+            - name: GENERATOR_BASEURL_ACCOUNTSERVICE
+              value: http://account-service.novabank.svc.cluster.local
+            - name: GENERATOR_BASEURL_CARDSERVICE
+              value: http://card-service.novabank.svc.cluster.local
