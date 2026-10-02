@@ -128,9 +128,14 @@ az acr repository show-tags --name <acrName> --repository customer-service -o ta
 
 ### Troubleshooting
 
-- **Workflow fails on `azure/login` with "AADSTS70021: No matching federated identity
-  record found"** — the subject claim doesn't match. Check the run was triggered by a
-  push to `main` (not a PR or another branch) and that the repo variables match the
-  identity actually deployed.
+- **Workflow fails on `azure/login` with "AADSTS700213: No matching federated identity
+  record found", and the logged subject looks like
+  `repo:owner@123456/repo@789012:ref:refs/heads/main`** — GitHub's OIDC subject claim
+  now embeds the owner's and repo's stable numeric database IDs, not just their names.
+  Our federated credential's `subject` must match this exact format (see
+  `infra/modules/githubIdentity.bicep`'s `githubOwnerId`/`githubRepoId` params). Get the
+  real IDs with `gh api repos/<owner>/<repo> --jq '{owner: .owner.id, repo: .id}'` and
+  redeploy. (This bit us on the very first Stage 2 run — the workflow's own log printed
+  the exact subject GitHub presented, which made the fix a one-line diff once found.)
 - **`docker push` fails with 401/403** — confirm the `AcrPush` role assignment exists on
   the registry (see Verify above) and that `az acr login` ran successfully first.
