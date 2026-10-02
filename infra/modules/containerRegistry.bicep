@@ -10,6 +10,9 @@ param registryName string
 @description('Principal ID of the identity to grant AcrPush on this registry only.')
 param githubIdentityPrincipalId string
 
+@description('Object ID of the AKS cluster\'s kubelet identity, granted AcrPull on this registry only.')
+param aksKubeletIdentityObjectId string
+
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: registryName
   location: location
@@ -32,6 +35,20 @@ resource acrPushAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   properties: {
     roleDefinitionId: acrPushRoleId
     principalId: githubIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// AcrPull built-in role, scoped to this registry only: AKS nodes can pull images here
+// and nothing else.
+var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+
+resource acrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, aksKubeletIdentityObjectId, acrPullRoleId)
+  scope: registry
+  properties: {
+    roleDefinitionId: acrPullRoleId
+    principalId: aksKubeletIdentityObjectId
     principalType: 'ServicePrincipal'
   }
 }

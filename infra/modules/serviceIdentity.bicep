@@ -13,10 +13,34 @@ param vaultName string
 @description('Name of the single secret this service is allowed to read.')
 param secretName string
 
+@description('AKS cluster\'s OIDC issuer URL, for federating this identity with a Kubernetes service account.')
+param aksOidcIssuerUrl string
+
+@description('Kubernetes namespace the service runs in.')
+param kubernetesNamespace string = 'novabank'
+
+@description('Kubernetes service account name this identity is federated with.')
+param kubernetesServiceAccountName string
+
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
   location: location
   tags: tags
+}
+
+// Lets the pod running under this Kubernetes service account authenticate as this
+// identity directly — no client secret stored anywhere, same OIDC federation pattern
+// as the GitHub Actions identity, just with AKS as the token issuer instead of GitHub.
+resource workloadIdentityFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
+  parent: identity
+  name: 'aks-workload-identity'
+  properties: {
+    issuer: aksOidcIssuerUrl
+    audiences: [
+      'api://AzureADTokenExchange'
+    ]
+    subject: 'system:serviceaccount:${kubernetesNamespace}:${kubernetesServiceAccountName}'
+  }
 }
 
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {

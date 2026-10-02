@@ -1,0 +1,16 @@
+image:
+  repository: customer-service
+
+containerPort: 8081
+
+serviceAccount:
+  name: customer-service
+  clientId: "11d9053b-e9a1-4249-8ebc-96488a1e9209"
+
+database:
+  name: customer_db
+  username: customer_app
+  passwordSecretName: customer-db-password
+
+ingress:
+  host: customer.20.233.234.238.nip.io

@@ -33,21 +33,27 @@ param allowedClientIp string
 @description('Object ID of the owner, granted Key Vault Secrets Officer so deployments can write secrets.')
 param ownerPrincipalId string
 
+// Deterministic (not newGuid()): newGuid() re-evaluates on every `az deployment sub
+// create` run, silently rotating these on every unrelated redeploy and desyncing Key
+// Vault from the actual Postgres role passwords set by create-db-roles.sh. uniqueString()
+// is stable for the life of this resource group, so these stay constant across redeploys
+// while still never appearing as a literal in the repo. Mixed case + digit + symbol
+// satisfies Postgres's password complexity policy.
 @secure()
-@description('PostgreSQL admin password, generated at deploy time.')
-param postgresAdminPassword string = newGuid()
+@description('PostgreSQL admin password, deterministic for this subscription/environment.')
+param postgresAdminPassword string = '${toUpper(uniqueString(subscription().id, 'nb-${environmentName}-rg-pg-admin'))}${uniqueString(subscription().id, 'nb-${environmentName}-rg-pg-admin-lower')}!1'
 
 @secure()
-@description('customer-service DB password, generated at deploy time.')
-param customerDbPassword string = newGuid()
+@description('customer-service DB password, deterministic for this subscription/environment.')
+param customerDbPassword string = '${toUpper(uniqueString(subscription().id, 'nb-${environmentName}-rg-customer-db'))}${uniqueString(subscription().id, 'nb-${environmentName}-rg-customer-db-lower')}!1'
 
 @secure()
-@description('account-service DB password, generated at deploy time.')
-param accountDbPassword string = newGuid()
+@description('account-service DB password, deterministic for this subscription/environment.')
+param accountDbPassword string = '${toUpper(uniqueString(subscription().id, 'nb-${environmentName}-rg-account-db'))}${uniqueString(subscription().id, 'nb-${environmentName}-rg-account-db-lower')}!1'
 
 @secure()
-@description('card-service DB password, generated at deploy time.')
-param cardDbPassword string = newGuid()
+@description('card-service DB password, deterministic for this subscription/environment.')
+param cardDbPassword string = '${toUpper(uniqueString(subscription().id, 'nb-${environmentName}-rg-card-db'))}${uniqueString(subscription().id, 'nb-${environmentName}-rg-card-db-lower')}!1'
 
 var tags = {
   project: 'novabank'
@@ -97,6 +103,18 @@ module githubIdentity 'modules/githubIdentity.bicep' = {
   }
 }
 
+module aks 'modules/aks.bicep' = {
+  name: 'aks'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    clusterName: 'nb-${environmentName}-aks'
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+    githubIdentityPrincipalId: githubIdentity.outputs.principalId
+  }
+}
+
 module containerRegistry 'modules/containerRegistry.bicep' = {
   name: 'containerRegistry'
   scope: rg
@@ -105,6 +123,7 @@ module containerRegistry 'modules/containerRegistry.bicep' = {
     tags: tags
     registryName: 'nbdevacr${uniqueString(rg.id)}'
     githubIdentityPrincipalId: githubIdentity.outputs.principalId
+    aksKubeletIdentityObjectId: aks.outputs.kubeletIdentityObjectId
   }
 }
 
@@ -118,6 +137,7 @@ module postgres 'modules/postgres.bicep' = {
     administratorLogin: 'nbadmin'
     administratorPassword: postgresAdminPassword
     allowedClientIp: allowedClientIp
+    aksOutboundIp: aks.outputs.outboundIpAddress
   }
 }
 
@@ -145,6 +165,8 @@ module customerServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-customer'
     vaultName: keyVault.outputs.vaultName
     secretName: 'customer-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'customer-service'
   }
 }
 
@@ -157,6 +179,8 @@ module accountServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-account'
     vaultName: keyVault.outputs.vaultName
     secretName: 'account-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'account-service'
   }
 }
 
@@ -169,6 +193,8 @@ module cardServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-card'
     vaultName: keyVault.outputs.vaultName
     secretName: 'card-db-password'
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    kubernetesServiceAccountName: 'card-service'
   }
 }
 
@@ -180,3 +206,8 @@ output githubIdentityClientId string = githubIdentity.outputs.clientId
 output postgresFqdn string = postgres.outputs.fqdn
 output keyVaultName string = keyVault.outputs.vaultName
 output keyVaultUri string = keyVault.outputs.vaultUri
+output aksClusterName string = aks.outputs.clusterName
+output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl
+output customerIdentityClientId string = customerServiceIdentity.outputs.clientId
+output accountIdentityClientId string = accountServiceIdentity.outputs.clientId
+output cardIdentityClientId string = cardServiceIdentity.outputs.clientId

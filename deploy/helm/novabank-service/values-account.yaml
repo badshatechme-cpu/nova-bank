@@ -1,0 +1,16 @@
+image:
+  repository: account-service
+
+containerPort: 8082
+
+serviceAccount:
+  name: account-service
+  clientId: "1e988dc6-a9a2-4928-bf39-d201f9ee9b1f"
+
+database:
+  name: account_db
+  username: account_app
+  passwordSecretName: account-db-password
+
+ingress:
+  host: account.20.233.234.238.nip.io

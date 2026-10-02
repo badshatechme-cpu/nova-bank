@@ -29,15 +29,13 @@ create_role_for() {
     -v role="$role" \
     -v db="$db" \
     <<'SQL'
-DO $do$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'role') THEN
-    EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'role', :'pw');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'role', :'pw');
-  END IF;
-END
-$do$;
+SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'role') AS role_exists \gset
+
+\if :role_exists
+ALTER ROLE :"role" WITH LOGIN PASSWORD :'pw';
+\else
+CREATE ROLE :"role" WITH LOGIN PASSWORD :'pw';
+\endif
 
 GRANT ALL PRIVILEGES ON DATABASE :"db" TO :"role";
 GRANT ALL ON SCHEMA public TO :"role";
