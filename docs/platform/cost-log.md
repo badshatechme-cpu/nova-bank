@@ -33,9 +33,22 @@ in actual spend here)_
 
 **Observed:** _(fill in after a billing cycle)_
 
+## Stage 3 — Database and secrets
+
+| Resource | SKU | Expected monthly cost | Notes |
+|---|---|---|---|
+| PostgreSQL Flexible Server `nb-dev-psql` | Burstable `Standard_B1ms`, 32GB storage | ~$12-20/month | Billed hourly while running — use `scripts/stop.sh`/`start.sh` between sessions to cut this significantly |
+| Key Vault `nbdevkv<unique>` | Standard | ~$0 | Pay-per-operation; negligible at this volume |
+| Managed identities (×3) | — | $0 | Free |
+| Role assignments (×4) | — | $0 | Free |
+| **Stage 3 total (running continuously)** | | **~$12-20/month** | Closer to $0 if stopped outside active work sessions |
+
+**Observed:** _(fill in after a billing cycle)_
+
 ## Running cumulative total
 
 | Stage | Expected incremental cost | Cumulative expected |
 |---|---|---|
 | 1 — Foundations | ~$0 | ~$0 |
 | 2 — ACR + build pipeline | ~$5 | ~$5 |
+| 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
