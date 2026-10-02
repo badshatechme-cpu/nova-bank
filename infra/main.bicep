@@ -12,8 +12,17 @@ param ownerEmail string
 @description('Monthly budget amount in USD that triggers the 50/80/100% alerts.')
 param monthlyBudgetAmount int
 
-@description('GitHub repository in "owner/repo" form, used for the OIDC federated credential subject.')
-param githubRepo string
+@description('GitHub org/user login, e.g. badshatechme-cpu.')
+param githubOwner string
+
+@description('GitHub numeric owner (user/org) database ID. Get via: gh api repos/<owner>/<repo> --jq .owner.id')
+param githubOwnerId string
+
+@description('GitHub repository name, e.g. nova-bank.')
+param githubRepoName string
+
+@description('GitHub numeric repository database ID. Get via: gh api repos/<owner>/<repo> --jq .id')
+param githubRepoId string
 
 @description('Branch allowed to deploy via the GitHub Actions identity.')
 param githubBranch string = 'main'
@@ -58,7 +67,10 @@ module githubIdentity 'modules/githubIdentity.bicep' = {
     location: location
     tags: tags
     identityName: 'nb-${environmentName}-id-github'
-    githubRepo: githubRepo
+    githubOwner: githubOwner
+    githubOwnerId: githubOwnerId
+    githubRepoName: githubRepoName
+    githubRepoId: githubRepoId
     githubBranch: githubBranch
   }
 }
