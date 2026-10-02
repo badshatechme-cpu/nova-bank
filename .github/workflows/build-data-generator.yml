@@ -1,0 +1,30 @@
+name: Build and push data-generator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ vars.ACR_NAME }}
+
+      - name: Build and push data-generator
+        run: |
+          IMAGE="${{ vars.ACR_NAME }}.azurecr.io/data-generator:${{ github.sha }}"
+          docker build -t "$IMAGE" -f data-generator/Dockerfile .
+          docker push "$IMAGE"
