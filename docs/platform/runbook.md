@@ -139,3 +139,87 @@ az acr repository show-tags --name <acrName> --repository customer-service -o ta
   the exact subject GitHub presented, which made the fix a one-line diff once found.)
 - **`docker push` fails with 401/403** — confirm the `AcrPush` role assignment exists on
   the registry (see Verify above) and that `az acr login` ran successfully first.
+
+## Stage 3 — Database and secrets
+
+**What it deploys:** PostgreSQL Flexible Server `nb-dev-psql` (3 databases, firewall
+locked to the owner's IP), Key Vault `nbdevkv<unique>` (RBAC mode, 4 secrets), and 3
+per-service managed identities each scoped to one secret.
+
+### Preview and deploy
+
+Same commands as before — `infra/main.bicep` now includes Stage 3's modules too. Before
+running `what-if`, refresh your current public IP and confirm it matches
+`infra/env/dev.bicepparam`'s `allowedClientIp` (update and redeploy if it's changed):
+
+```bash
+curl -s https://api.ipify.org
+```
+
+```bash
+az deployment sub what-if \
+  --location uaenorth \
+  --template-file infra/main.bicep \
+  --parameters infra/env/dev.bicepparam
+
+az deployment sub create \
+  --location uaenorth \
+  --template-file infra/main.bicep \
+  --parameters infra/env/dev.bicepparam \
+  --name stage3-database-secrets
+```
+
+### One-time setup after first deploy: create the per-service Postgres roles
+
+```bash
+./scripts/create-db-roles.sh
+```
+
+Requires the `psql` client (`brew install libpq && brew link --force libpq` on a Mac
+without it already) and that you're `az login`-ed. This connects directly to the live
+database using the admin password pulled fresh from Key Vault — nothing is hardcoded.
+
+### Verify
+
+```bash
+az postgres flexible-server show --name nb-dev-psql --resource-group nb-dev-rg \
+  --query "{fqdn:fullyQualifiedDomainName, state:state, sku:sku.name}"
+
+az postgres flexible-server db list --server-name nb-dev-psql --resource-group nb-dev-rg -o table
+
+az keyvault secret list --vault-name <keyVaultName output> --query "[].name" -o tsv
+
+# Confirm each identity can only read its own secret:
+SUB=$(az account show --query id -o tsv)
+az role assignment list \
+  --scope "/subscriptions/$SUB/resourceGroups/nb-dev-rg/providers/Microsoft.KeyVault/vaults/<keyVaultName>/secrets/customer-db-password" \
+  -o table
+```
+
+**Done when:** all three databases exist, all four secrets are in Key Vault, and each
+service identity's role assignment resolves to exactly one secret (not the vault, not
+another service's secret).
+
+### Start / stop (cost control)
+
+PostgreSQL is billed hourly while running — stop it whenever you're done for the day:
+
+```bash
+./scripts/stop.sh    # at the end of a session
+./scripts/start.sh   # before the next session
+```
+
+### Troubleshooting
+
+- **`what-if` or deploy fails on the Key Vault secrets with "Forbidden" / insufficient
+  permissions** — RBAC role assignments can take up to a minute or two to propagate.
+  The owner's `Key Vault Secrets Officer` grant and the secret-write in the same
+  deployment can occasionally race on a fresh vault. Simply re-run `az deployment sub
+  create` — it's idempotent, and the second attempt succeeds once the role has
+  propagated.
+- **`create-db-roles.sh` fails to connect ("timeout expired" or "could not connect")**
+  — your public IP has changed since the firewall rule was deployed. Re-check with
+  `curl -s https://api.ipify.org`, update `allowedClientIp` in `dev.bicepparam`, and
+  redeploy.
+- **`psql: command not found`** — install the PostgreSQL client: `brew install libpq &&
+  brew link --force libpq`.

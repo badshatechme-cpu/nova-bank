@@ -70,3 +70,53 @@ flowchart LR
 | `AcrPush` scoped to the registry resource, not the resource group | Least privilege: this identity's blast radius is "can push/pull images to this one registry" | If a second registry is ever added, it needs its own role assignment |
 | ACR admin user disabled | No static admin password exists to leak; every push is OIDC-authenticated | Can't `docker login` with a username/password for quick manual testing — use `az acr login` instead |
 | ACR Basic SKU | Cheapest tier (~$5/month); no geo-replication or private endpoint support needed yet | Upgrade to Premium only if Stage 7 needs a private endpoint on the registry |
+
+## Stage 3 — Database and secrets
+
+```mermaid
+flowchart TB
+    subgraph psql[PostgreSQL Flexible Server nb-dev-psql]
+        cdb[(customer_db)]
+        adb[(account_db)]
+        kdb[(card_db)]
+    end
+
+    fw[Firewall rule<br/>owner IP only]
+    fw --> psql
+
+    subgraph kv[Key Vault nbdevkv&lt;unique&gt; - RBAC mode]
+        s0[postgres-admin-password]
+        s1[customer-db-password]
+        s2[account-db-password]
+        s3[card-db-password]
+    end
+
+    idc[nb-dev-id-customer]
+    ida[nb-dev-id-account]
+    idk[nb-dev-id-card]
+
+    idc -- "Key Vault Secrets User<br/>(scoped to s1 only)" --> s1
+    ida -- "Key Vault Secrets User<br/>(scoped to s2 only)" --> s2
+    idk -- "Key Vault Secrets User<br/>(scoped to s3 only)" --> s3
+```
+
+| Resource | Name | Purpose |
+|---|---|---|
+| PostgreSQL Flexible Server | `nb-dev-psql` | Burstable `Standard_B1ms`, Postgres 16, 32GB storage, no HA, 7-day backups |
+| Firewall rule | `allow-owner-ip` | Public access restricted to the owner's single IP — Stage 7 removes public access entirely |
+| Databases | `customer_db`, `account_db`, `card_db` | Created empty; Flyway migrates the schema when the services connect in Stage 4 |
+| Key Vault | `nbdevkv<unique>` | RBAC mode (no legacy access policies) |
+| Role assignment | `Key Vault Secrets Officer` → owner, scoped to the vault | Lets the owner's own deployment write the secrets below |
+| Secrets | `postgres-admin-password`, `customer-db-password`, `account-db-password`, `card-db-password` | Generated at deploy time via Bicep `newGuid()`; never written to a file in the repo |
+| Managed identities | `nb-dev-id-customer`, `nb-dev-id-account`, `nb-dev-id-card` | One per service, used in Stage 4 to pull each service's own DB password at runtime |
+| Role assignments | `Key Vault Secrets User`, scoped to **one secret each** | `nb-dev-id-customer` can read `customer-db-password` only — not the admin password, not another service's password |
+
+**Manual one-time step:** `scripts/create-db-roles.sh` creates the three per-service Postgres roles (`customer_app`, `account_app`, `card_app`), reading their passwords live from Key Vault. Postgres roles aren't an ARM/Bicep resource type — the only declarative alternative is an Azure deployment-script resource, which spins up a temporary container and storage account just to run a few SQL statements, and needs the firewall opened to "all Azure services" to reach the database. Running a short script yourself instead avoids that cost/complexity and keeps the live-database connection in the owner's hands, consistent with the platform/application change-control split.
+
+### Decisions
+| Decision | Why | Trade-off |
+|---|---|---|
+| Per-service DB passwords generated now, Postgres roles created via a manual script | Postgres users/roles have no ARM resource type; a deployment-script workaround adds cost, complexity, and a firewall exception | Two steps instead of one — Bicep deploy, then run `create-db-roles.sh` |
+| Key Vault Secrets User scoped per-secret, not per-vault | Demonstrates real secret-level least privilege: a compromised service identity can only ever read its own DB password | Three near-identical role assignments instead of one vault-wide grant |
+| Firewall restricted to the owner's single IP | Smallest possible exposure while the owner is the only one connecting (schema migrations, manual checks) | Breaks if the owner's IP changes (home network, VPN) — re-run the deployment with the new IP, or widen temporarily |
+| Burstable `Standard_B1ms`, no HA | Cheapest SKU that still runs Postgres 16 reliably for dev/demo traffic (~$12-20/month) | No failover; acceptable for a non-production portfolio environment |

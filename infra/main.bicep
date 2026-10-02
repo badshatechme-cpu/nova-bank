@@ -27,6 +27,28 @@ param githubRepoId string
 @description('Branch allowed to deploy via the GitHub Actions identity.')
 param githubBranch string = 'main'
 
+@description('Single public IP allowed through the Postgres firewall (your current IP).')
+param allowedClientIp string
+
+@description('Object ID of the owner, granted Key Vault Secrets Officer so deployments can write secrets.')
+param ownerPrincipalId string
+
+@secure()
+@description('PostgreSQL admin password, generated at deploy time.')
+param postgresAdminPassword string = newGuid()
+
+@secure()
+@description('customer-service DB password, generated at deploy time.')
+param customerDbPassword string = newGuid()
+
+@secure()
+@description('account-service DB password, generated at deploy time.')
+param accountDbPassword string = newGuid()
+
+@secure()
+@description('card-service DB password, generated at deploy time.')
+param cardDbPassword string = newGuid()
+
 var tags = {
   project: 'novabank'
   env: environmentName
@@ -86,8 +108,75 @@ module containerRegistry 'modules/containerRegistry.bicep' = {
   }
 }
 
+module postgres 'modules/postgres.bicep' = {
+  name: 'postgres'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    serverName: 'nb-${environmentName}-psql'
+    administratorLogin: 'nbadmin'
+    administratorPassword: postgresAdminPassword
+    allowedClientIp: allowedClientIp
+  }
+}
+
+module keyVault 'modules/keyVault.bicep' = {
+  name: 'keyVault'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    vaultName: 'nbdevkv${uniqueString(rg.id)}'
+    ownerPrincipalId: ownerPrincipalId
+    postgresAdminPassword: postgresAdminPassword
+    customerDbPassword: customerDbPassword
+    accountDbPassword: accountDbPassword
+    cardDbPassword: cardDbPassword
+  }
+}
+
+module customerServiceIdentity 'modules/serviceIdentity.bicep' = {
+  name: 'customerServiceIdentity'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    identityName: 'nb-${environmentName}-id-customer'
+    vaultName: keyVault.outputs.vaultName
+    secretName: 'customer-db-password'
+  }
+}
+
+module accountServiceIdentity 'modules/serviceIdentity.bicep' = {
+  name: 'accountServiceIdentity'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    identityName: 'nb-${environmentName}-id-account'
+    vaultName: keyVault.outputs.vaultName
+    secretName: 'account-db-password'
+  }
+}
+
+module cardServiceIdentity 'modules/serviceIdentity.bicep' = {
+  name: 'cardServiceIdentity'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    identityName: 'nb-${environmentName}-id-card'
+    vaultName: keyVault.outputs.vaultName
+    secretName: 'card-db-password'
+  }
+}
+
 output resourceGroupName string = rg.name
 output logAnalyticsWorkspaceId string = logAnalytics.outputs.workspaceId
 output acrLoginServer string = containerRegistry.outputs.loginServer
 output acrName string = containerRegistry.outputs.registryName
 output githubIdentityClientId string = githubIdentity.outputs.clientId
+output postgresFqdn string = postgres.outputs.fqdn
+output keyVaultName string = keyVault.outputs.vaultName
+output keyVaultUri string = keyVault.outputs.vaultUri
