@@ -69,6 +69,16 @@ miss was the two line items above, now added. Stage 1's $25/month budget alert w
 once billing data catches up — it's correctly flagging that actual continuous-run cost
 now exceeds that original threshold, not a false alarm.
 
+## Stage 5 — API Management and Entra ID security
+
+| Resource | SKU | Expected monthly cost | Notes |
+|---|---|---|---|
+| APIM `nb-dev-apim` | Consumption tier | ~$0 | True pay-per-call: first 1M calls/month free, then ~$3.50/million. Chosen specifically to minimize cost — explicitly asked for and confirmed before provisioning |
+| Entra ID app registration, scopes, app role, test users | — | $0 | Entra ID (Microsoft Graph), not a billed Azure resource |
+| **Stage 5 total** | | **~$0/month** | The only Azure resource this stage adds is APIM, and at portfolio-demo call volumes it stays within the free tier entirely |
+
+**Observed:** _(fill in after a billing cycle)_
+
 ## Running cumulative total
 
 | Stage | Expected incremental cost | Cumulative expected |
@@ -77,3 +87,4 @@ now exceeds that original threshold, not a false alarm.
 | 2 — ACR + build pipeline | ~$5 | ~$5 |
 | 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
 | 4 — AKS and first deployment | ~$99-113 (if left running) | ~$116-138 |
+| 5 — APIM and Entra ID security | ~$0 | ~$116-138 |

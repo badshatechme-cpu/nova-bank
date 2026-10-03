@@ -357,3 +357,71 @@ PostgreSQL — both bill hourly while running.
   `infra/modules/postgres.bicep` has the `allow-aks-outbound-ip` firewall rule and that
   it matches the cluster's actual outbound IP (`az aks show --name nb-dev-aks
   --resource-group nb-dev-rg --query networkProfile.loadBalancerProfile`).
+
+## Stage 5 — API Management and Entra ID security
+
+**What it deploys:** APIM (`nb-dev-apim`, Consumption tier) with 3 APIs and JWT validation
+policies, plus an Entra ID app registration, 4 scopes, an app role, and a `customerId`
+directory extension claim — set up once via `scripts/setup-entra-id.sh` (not Bicep; app
+registrations live in Microsoft Graph, not ARM).
+
+### One-time Entra ID setup
+
+```bash
+./scripts/setup-entra-id.sh
+```
+
+This prints several follow-up commands the owner must run themselves (the assistant's auto
+mode blocks permission-grant and secret-write actions) — admin consent for the app's own
+scopes, creating the two test users, and storing their passwords in Key Vault. See the
+script's own output and `architecture.md`'s Stage 5 section for the exact values.
+
+### Deploy APIM (same Bicep pattern as before)
+
+```bash
+az deployment sub what-if --location uaenorth --template-file infra/main.bicep --parameters infra/env/dev.bicepparam
+az deployment sub create --location uaenorth --template-file infra/main.bicep --parameters infra/env/dev.bicepparam --name stage5-apim
+```
+
+### Test the four scenarios
+
+Open `docs/platform/stage5-security-scenarios.http` in VS Code with the REST Client
+extension, or replicate it with `curl` — acquire a token via ROPC, then call the APIM
+gateway (`https://nb-dev-apim.azure-api.net`), never the services directly.
+
+### Troubleshooting
+
+- **APIM deployment fails with an XML/token error mentioning `<` or unexpected characters
+  in a policy** — a C# expression inside a `condition="..."` or similar XML attribute has
+  unescaped `<`, `>`, or `"` characters. Escape them as `&lt;`, `&gt;`, `&quot;` — this is
+  needed even when the unescaped form matches Microsoft's own documented policy examples.
+- **A specific API returns `404 Resource not found` through the gateway right after a
+  deploy, but others on the same APIM instance work** — likely propagation lag for a
+  newly-created API specifically (not the whole gateway). Wait a few minutes and retry;
+  confirm by testing a different operation on an API that already existed before this
+  deploy, which should already work.
+- **Every request returns `401` even with what looks like a valid, freshly-issued token** —
+  check the token's actual `aud` claim (decode it — see the one-liner in
+  `stage5-security-scenarios.http`'s comments or just split-decode the JWT's second
+  segment). For an app configured as its own test client, Entra ID issues `aud` as the
+  **raw app ID**, not the `api://` Application ID URI — the URI form only applies when the
+  client and the resource are different apps. Set APIM's `apiAudience` and each service's
+  `expected-audience` to match whatever the real token actually contains.
+- **A token requested with a narrow `scope` parameter still has every scope the app is
+  admin-consented for** — expected ROPC behaviour for a self-referential app; the `scope`
+  parameter doesn't narrow the grant. To get a genuinely scope-limited token for testing,
+  create a second, separate test-client app registration with only the narrower permission
+  granted, and request tokens through that app instead.
+- **A `<validate-jwt required-claims>` scope check never matches, even though the token
+  genuinely has that scope** — Entra ID's `scp` claim is one space-delimited string, not a
+  JSON array; `required-claims` does an exact match against the whole value. Use an
+  expression-based check instead (`output-token-variable-name` on `validate-jwt`, then
+  `jwt.Claims.GetValueOrDefault("scp", new string[0]).Any(s => s.Split(' ').Contains(x))`
+  in a `<choose>`).
+- **A directory extension attribute (e.g. `customerId`) never appears in issued tokens** —
+  check two things, in order: (1) `optionalClaims` for that claim must have `"source":
+  "user"` explicitly — `source: null` silently does nothing for extension attributes, only
+  for built-in claims; (2) once fixed, the claim appears under an **abbreviated name**
+  (`extn.<propertyName>`, not the full `extension_<appid>_<propertyName>` form used in
+  Graph API configuration calls) and as a **single-element array**, not a plain string.
+  Decode an actual token to confirm the real claim name and shape rather than assuming.

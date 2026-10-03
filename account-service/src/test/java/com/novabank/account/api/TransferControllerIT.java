@@ -1,6 +1,8 @@
 package com.novabank.account.api;
 
 import com.novabank.account.api.dto.TransferRequest;
+import com.novabank.account.config.TestJwtSupport;
+import com.novabank.account.config.TestSecurityConfig;
 import com.novabank.account.domain.Account;
 import com.novabank.account.domain.AccountStatus;
 import com.novabank.account.domain.AccountType;
@@ -12,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -32,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestSecurityConfig.class)
 class TransferControllerIT {
 
     @Container
@@ -81,6 +85,7 @@ class TransferControllerIT {
     void transferSucceedsAndPostsBothSides() {
         Map<?, ?> body = client.post().uri("/api/v1/customers/{customerId}/transfers", customerId)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(customerId.toString()))
                 .header("Idempotency-Key", "success-key-1")
                 .body(requestOf(fromAccountId, toAccountId, "100.00", "Rent"))
                 .exchange()
@@ -102,6 +107,7 @@ class TransferControllerIT {
     void insufficientFundsReturns422AndChangesNothing() {
         client.post().uri("/api/v1/customers/{customerId}/transfers", customerId)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(customerId.toString()))
                 .header("Idempotency-Key", "insufficient-key-1")
                 .body(requestOf(fromAccountId, toAccountId, "999999.00", "Too much"))
                 .exchange()
@@ -119,6 +125,7 @@ class TransferControllerIT {
 
         Map<?, ?> first = client.post().uri("/api/v1/customers/{customerId}/transfers", customerId)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(customerId.toString()))
                 .header("Idempotency-Key", "replay-key-1")
                 .body(request)
                 .exchange()
@@ -129,6 +136,7 @@ class TransferControllerIT {
 
         Map<?, ?> second = client.post().uri("/api/v1/customers/{customerId}/transfers", customerId)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(customerId.toString()))
                 .header("Idempotency-Key", "replay-key-1")
                 .body(request)
                 .exchange()
@@ -158,6 +166,7 @@ class TransferControllerIT {
         Callable<Integer> transferOf80 = () -> client.post()
                 .uri("/api/v1/customers/{customerId}/transfers", customerId)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(customerId.toString()))
                 .header("Idempotency-Key", "concurrent-" + UUID.randomUUID())
                 .body(requestOf(drainAccountId, sinkAccountId, "80.00", "Concurrent drain"))
                 .exchange()
