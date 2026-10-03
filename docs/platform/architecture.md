@@ -204,6 +204,11 @@ flowchart LR
 
 **APIM routing:** each service's OpenAPI spec is imported as its own API with a distinct path prefix (`/customer`, `/account`, `/card`) rather than reusing the `nip.io`-per-hostname trick from Stage 4. APIM matches by the API's *own* path namespace plus each operation's full route template, so the account/card services nesting under `/api/v1/customers/{id}/...` — the same prefix customer-service itself owns — doesn't collide the way it would with simple ingress path-prefix routing.
 
+**Verified live, all four scenarios, through the real APIM gateway with real Entra ID tokens:**
+own data → `200` with real account data; another customer's data → `404`; a token missing
+`transfers.write` → `403`; no token → `401`. The second ("missing scope") scenario needed a
+separate, minimal test-client app registration — see the gotchas table below for why.
+
 ### What actually went wrong, and the fixes (all real, all worth keeping)
 
 | Problem | Root cause | Fix |

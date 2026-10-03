@@ -77,9 +77,29 @@ az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$OBJ
     }]
   }"
 
+echo "Creating a second, minimal test-client app (accounts.read only)..."
+echo "Needed because ROPC against the main app (acting as its own client) ignores a"
+echo "narrower requested scope and returns the full admin-consented grant regardless —"
+echo "this separate app genuinely cannot get transfers.write under any circumstance,"
+echo "which the Stage 5 'missing scope returns 403' scenario needs to actually prove."
+READONLY_APP=$(az rest --method POST --url "https://graph.microsoft.com/v1.0/applications" --headers "Content-Type=application/json" --body "{
+  \"displayName\": \"NovaBank Test Client (read-only)\",
+  \"signInAudience\": \"AzureADMyOrg\",
+  \"isFallbackPublicClient\": true,
+  \"requiredResourceAccess\": [{
+    \"resourceAppId\": \"$APP_ID\",
+    \"resourceAccess\": [{\"id\": \"$SCOPE_ACCOUNTS_READ\", \"type\": \"Scope\"}]
+  }]
+}")
+READONLY_APP_ID=$(echo "$READONLY_APP" | python3 -c "import json,sys; print(json.load(sys.stdin)['appId'])")
+az rest --method POST --url "https://graph.microsoft.com/v1.0/servicePrincipals" \
+  --headers "Content-Type=application/json" --body "{\"appId\": \"$READONLY_APP_ID\"}" > /dev/null
+echo "Read-only test client app ID: $READONLY_APP_ID"
+
 echo ""
 echo "Still needed (classifier blocks these for the assistant; run yourself):"
 echo "  az ad app permission admin-consent --id $APP_ID"
+echo "  az ad app permission admin-consent --id $READONLY_APP_ID"
 echo ""
 echo "Then create two test users, each mapped to a real seeded customerId:"
 echo '  az rest --method POST --url "https://graph.microsoft.com/v1.0/users" --body "{...}"'

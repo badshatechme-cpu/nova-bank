@@ -19,9 +19,15 @@
 
 @testUser2CustomerId = ff58781a-7832-43c4-b3db-de1dc4fecdbb
 
+# A second, minimal app registration ("NovaBank Test Client (read-only)"), granted admin
+# consent for accounts.read only. Needed because ROPC against the main app (which acts as
+# its own client) ignores a narrower requested scope and returns the full admin-consented
+# grant regardless — this app genuinely cannot get transfers.write under any circumstance.
+@readOnlyClientId = 3eb28caa-ec61-4971-9f89-c45e1891c495
+
 ###
 # @name tokenFullScope
-# Acquires a token for test user 1 with all four scopes consented.
+# Acquires a token for test user 1 with all four scopes.
 POST https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token
 Content-Type: application/x-www-form-urlencoded
 
@@ -33,13 +39,13 @@ grant_type=password
 
 ###
 # @name tokenReadOnly
-# Acquires a token for the SAME user but requesting only accounts.read — used below to
-# prove the "missing scope" scenario (this token genuinely cannot do transfers.write).
+# Acquires a token for the SAME user through the read-only test client — the resulting
+# token's scp is genuinely just "accounts.read", used below for the "missing scope" scenario.
 POST https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=password
-&client_id={{clientId}}
+&client_id={{readOnlyClientId}}
 &username={{testUser1}}
 &password={{testUser1Password}}
 &scope=api://{{clientId}}/accounts.read
