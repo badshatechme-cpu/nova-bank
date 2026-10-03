@@ -79,6 +79,17 @@ now exceeds that original threshold, not a false alarm.
 
 **Observed:** _(fill in after a billing cycle)_
 
+## Stage 6 — Observability
+
+| Resource | SKU | Expected monthly cost | Notes |
+|---|---|---|---|
+| Application Insights `nb-dev-appinsights` | Workspace-based | $0 (resource itself) | Billed as Log Analytics ingestion, same meter and same 1GB/day cap as Stage 4's Container Insights |
+| Additional log ingestion (traces, requests, dependencies) | — | ~$0-3/month | Expected to stay well under the 1GB/day cap at portfolio-demo request volume |
+| Workbook, 2 alerts, 1 action group | — | $0 | All free; alerts only cost anything per-notification at a much higher volume than email |
+| **Stage 6 total** | | **~$0-3/month** | |
+
+**Observed:** _(fill in after a billing cycle)_
+
 ## Running cumulative total
 
 | Stage | Expected incremental cost | Cumulative expected |
@@ -88,3 +99,4 @@ now exceeds that original threshold, not a false alarm.
 | 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
 | 4 — AKS and first deployment | ~$99-113 (if left running) | ~$116-138 |
 | 5 — APIM and Entra ID security | ~$0 | ~$116-138 |
+| 6 — Observability | ~$0-3 | ~$116-141 |

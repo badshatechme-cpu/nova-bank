@@ -30,6 +30,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.serviceAccount.name }}-db-secret
                   key: password
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.serviceAccount.name }}-appinsights-secret
+                  key: connectionString
+            - name: APPLICATIONINSIGHTS_ROLE_NAME
+              value: {{ .Values.serviceAccount.name | quote }}
           resources:
             requests:
               cpu: {{ .Values.resources.requests.cpu }}
@@ -41,13 +48,16 @@ spec:
             httpGet:
               path: /actuator/health/liveness
               port: {{ .Values.containerPort }}
-            initialDelaySeconds: 30
+            # Bumped from 30s/20s: the Application Insights Java agent adds measurable
+            # startup overhead (class-loading instrumentation) on top of Spring Security's
+            # own OIDC discovery call.
+            initialDelaySeconds: 50
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: {{ .Values.containerPort }}
-            initialDelaySeconds: 20
+            initialDelaySeconds: 40
             periodSeconds: 10
           volumeMounts:
             - name: secrets-store

@@ -22,6 +22,10 @@ param accountDbPassword string
 @secure()
 param cardDbPassword string
 
+@secure()
+@description('Application Insights connection string, shared by all three services.')
+param appInsightsConnectionString string
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: vaultName
   location: location
@@ -96,8 +100,20 @@ resource cardDbPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   ]
 }
 
+resource appInsightsConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: vault
+  name: 'appinsights-connection-string'
+  properties: {
+    value: appInsightsConnectionString
+  }
+  dependsOn: [
+    ownerSecretsOfficer
+  ]
+}
+
 output vaultName string = vault.name
 output vaultUri string = vault.properties.vaultUri
 output customerSecretId string = customerDbPasswordSecret.id
 output accountSecretId string = accountDbPasswordSecret.id
 output cardSecretId string = cardDbPasswordSecret.id
+output appInsightsSecretId string = appInsightsConnectionStringSecret.id
