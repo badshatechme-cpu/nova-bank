@@ -425,3 +425,52 @@ gateway (`https://nb-dev-apim.azure-api.net`), never the services directly.
   (`extn.<propertyName>`, not the full `extension_<appid>_<propertyName>` form used in
   Graph API configuration calls) and as a **single-element array**, not a plain string.
   Decode an actual token to confirm the real claim name and shape rather than assuming.
+
+## Stage 6 — Observability
+
+**What it deploys:** Application Insights (workspace-based, linked to `nb-dev-log`), the
+Java agent attached to all 3 services via their Dockerfiles, an observability workbook, two
+alerts (5xx rate, pod crash loops), and an action group emailing the owner.
+
+### Deploy (same Bicep pattern as before)
+
+```bash
+az deployment sub what-if --location uaenorth --template-file infra/main.bicep --parameters infra/env/dev.bicepparam
+az deployment sub create --location uaenorth --template-file infra/main.bicep --parameters infra/env/dev.bicepparam --name stage6-observability
+```
+
+Then push to `main` (or merge the stage branch) to trigger the build+deploy pipeline — the
+Java agent only takes effect once the new images with the updated Dockerfiles are live.
+
+### Watch a live trace end to end
+
+1. Generate some traffic through APIM (any of the Stage 5 `.http` scenarios, or a plain
+   authenticated `curl`).
+2. In the Azure Portal, open `nb-dev-appinsights` → **Transaction search**, find a recent
+   request.
+3. Click into it — the end-to-end transaction view shows the HTTP request, the SQL
+   dependency call to Postgres (auto-instrumented, no code change), and timing for each.
+
+### Test an alert fires
+
+- **5xx rate:** call an endpoint that returns a 5xx more than 5 times within 5 minutes
+  (e.g., a transfer with an invalid currency repeatedly), then check **Monitor → Alerts**
+  in the portal, or wait for the email.
+- **Pod crash loop:** intentionally break a pod (e.g., temporarily set a wrong
+  `SPRING_DATASOURCE_URL` in a values file and redeploy) and watch for the alert within
+  5 minutes, then revert.
+
+### Troubleshooting
+
+- **Pods take noticeably longer to become ready after this stage** — expected. The Java
+  agent adds real startup overhead (bytecode instrumentation at class-load time). The
+  Helm chart's `initialDelaySeconds` was bumped (50s liveness, 40s readiness) to
+  accommodate; if pods still fail readiness, check `kubectl logs` for the agent actually
+  attaching (`ApplicationInsights-LogLevel` logs on startup) rather than assuming it's
+  hung.
+- **No data in Application Insights despite pods running fine** — confirm
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` actually resolved: `kubectl exec` into a pod (or
+  check its env via `kubectl describe pod`) and verify the env var is non-empty. If it's
+  empty, the CSI sync for `appinsights-connection-string` likely needs the same "delete the
+  stale synced Secret" fix documented in Stage 4 — Key Vault's value is current, but the
+  synced Kubernetes Secret isn't refreshing on its own.

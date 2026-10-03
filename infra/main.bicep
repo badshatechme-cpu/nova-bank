@@ -144,6 +144,17 @@ module postgres 'modules/postgres.bicep' = {
   }
 }
 
+module appInsights 'modules/appInsights.bicep' = {
+  name: 'appInsights'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    appInsightsName: 'nb-${environmentName}-appinsights'
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+  }
+}
+
 module keyVault 'modules/keyVault.bicep' = {
   name: 'keyVault'
   scope: rg
@@ -156,6 +167,7 @@ module keyVault 'modules/keyVault.bicep' = {
     customerDbPassword: customerDbPassword
     accountDbPassword: accountDbPassword
     cardDbPassword: cardDbPassword
+    appInsightsConnectionString: appInsights.outputs.connectionString
   }
 }
 
@@ -168,6 +180,7 @@ module customerServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-customer'
     vaultName: keyVault.outputs.vaultName
     secretName: 'customer-db-password'
+    appInsightsSecretName: 'appinsights-connection-string'
     aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
     kubernetesServiceAccountName: 'customer-service'
   }
@@ -182,6 +195,7 @@ module accountServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-account'
     vaultName: keyVault.outputs.vaultName
     secretName: 'account-db-password'
+    appInsightsSecretName: 'appinsights-connection-string'
     aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
     kubernetesServiceAccountName: 'account-service'
   }
@@ -196,6 +210,7 @@ module cardServiceIdentity 'modules/serviceIdentity.bicep' = {
     identityName: 'nb-${environmentName}-id-card'
     vaultName: keyVault.outputs.vaultName
     secretName: 'card-db-password'
+    appInsightsSecretName: 'appinsights-connection-string'
     aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
     kubernetesServiceAccountName: 'card-service'
   }
@@ -222,6 +237,29 @@ module apim 'modules/apim.bicep' = {
   }
 }
 
+module workbook 'modules/workbook.bicep' = {
+  name: 'workbook'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    appInsightsId: appInsights.outputs.appInsightsId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+  }
+}
+
+module alerts 'modules/alerts.bicep' = {
+  name: 'alerts'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    appInsightsId: appInsights.outputs.appInsightsId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+    ownerEmail: ownerEmail
+  }
+}
+
 output resourceGroupName string = rg.name
 output apimGatewayUrl string = apim.outputs.gatewayUrl
 output logAnalyticsWorkspaceId string = logAnalytics.outputs.workspaceId
@@ -236,3 +274,4 @@ output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl
 output customerIdentityClientId string = customerServiceIdentity.outputs.clientId
 output accountIdentityClientId string = accountServiceIdentity.outputs.clientId
 output cardIdentityClientId string = cardServiceIdentity.outputs.clientId
+output appInsightsName string = appInsights.outputs.appInsightsName

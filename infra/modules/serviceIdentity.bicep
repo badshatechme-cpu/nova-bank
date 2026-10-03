@@ -13,6 +13,9 @@ param vaultName string
 @description('Name of the single secret this service is allowed to read.')
 param secretName string
 
+@description('Name of the shared Application Insights connection string secret, also readable by this identity.')
+param appInsightsSecretName string
+
 @description('AKS cluster\'s OIDC issuer URL, for federating this identity with a Kubernetes service account.')
 param aksOidcIssuerUrl string
 
@@ -52,6 +55,11 @@ resource secret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
   name: secretName
 }
 
+resource appInsightsSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
+  parent: vault
+  name: appInsightsSecretName
+}
+
 var secretsUserRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
 
 // Scoped to this one secret, not the vault — this identity cannot read any other
@@ -59,6 +67,18 @@ var secretsUserRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefi
 resource secretAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(secret.id, identity.id, secretsUserRoleId)
   scope: secret
+  properties: {
+    roleDefinitionId: secretsUserRoleId
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// The App Insights connection string isn't customer data and is shared by all three
+// services, so it's the one secret every identity is allowed to read beyond its own.
+resource appInsightsSecretAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(appInsightsSecret.id, identity.id, secretsUserRoleId)
+  scope: appInsightsSecret
   properties: {
     roleDefinitionId: secretsUserRoleId
     principalId: identity.properties.principalId

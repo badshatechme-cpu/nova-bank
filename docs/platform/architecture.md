@@ -229,3 +229,36 @@ separate, minimal test-client app registration — see the gotchas table below f
 | Scope required by HTTP method, not by operation | Each service's write operations all happen to be `POST` and its reads `GET` — a method-based rule covers every current operation without needing to know APIM's auto-generated per-operation resource names (unavailable until after the OpenAPI import completes) | Not fully general — a future `PATCH`/`PUT` operation would need the policy extended, not just the OpenAPI spec |
 | 404 (not 403) on ownership mismatch | Explicit requirement in `CLAUDE-PLATFORM.md`: don't let the status code confirm a resource exists for a customer that isn't the caller | A genuinely malformed/missing resource and someone else's resource are indistinguishable to the caller — intentional |
 | `NovaBank.Staff` role checked before the ownership comparison, not instead of real auth | Staff tokens still go through full JWT validation (issuer, audience, signature) — the bypass only skips the *customerId-vs-path* check, nothing else | None meaningful — this is the intended behaviour |
+
+## Stage 6 — Observability
+
+```mermaid
+flowchart LR
+    apim[APIM] --> cs[customer-service]
+    apim --> as[account-service]
+    apim --> ks[card-service]
+    cs & as & ks -- "App Insights Java agent<br/>auto-instruments HTTP + JDBC" --> ai[(Application Insights<br/>workspace-based)]
+    pods[AKS pods] -- "Container Insights<br/>since Stage 4" --> law[(nb-dev-log)]
+    ai -. "same workspace" .-> law
+    law --> wb[Observability workbook]
+    ai --> alert1[5xx rate alert]
+    law --> alert2[Pod crash-loop alert]
+```
+
+| Resource | Name | Purpose |
+|---|---|---|
+| Application Insights | `nb-dev-appinsights` | Workspace-based (not classic) — ingests into `nb-dev-log`, sharing Stage 4's 1GB/day cap rather than adding a second, uncapped data store |
+| Java agent | v3.7.10, all 3 services | Attached via `-javaagent:` in each Dockerfile; configured purely by `APPLICATIONINSIGHTS_CONNECTION_STRING` (from Key Vault via CSI, same pattern as DB passwords) and `APPLICATIONINSIGHTS_ROLE_NAME` (per-service, so traces attribute correctly) — no connection string or config file in code |
+| Workbook | `NovaBank Platform Observability` | Request rate, error rate, latency (avg/P95) per service from `requests`, plus pod restarts from Container Insights' `KubePodInventory` — one workbook spanning both data sources since they share a workspace |
+| Alerts | `nb-dev-5xx-rate-alert`, `nb-dev-pod-crashloop-alert` | Scheduled query rules (not classic metric alerts) — 5xx count > 5 in 5 minutes; any `BackOff` event in the `novabank` namespace in 5 minutes. Both notify `nb-dev-alerts` (email) |
+
+**Why the Java agent needs no code changes for the Postgres leg of a trace:** it auto-instruments JDBC at the bytecode level, so every `SPRING_DATASOURCE_URL` call the services already make shows up as a SQL dependency in the trace automatically.
+
+### Decisions
+| Decision | Why | Trade-off |
+|---|---|---|
+| Workspace-based Application Insights, not classic | Shares Stage 4's Log Analytics workspace and its 1GB/day ingestion cap — one place to control observability cost, not two | Slightly different query experience than classic App Insights' own dedicated store (irrelevant here since we query via the workspace either way) |
+| Java agent downloaded in the Dockerfile, not baked into a shared base image | Keeps each service's Dockerfile self-contained and independently buildable, matching this project's per-service deployment model | Same JAR downloaded 3 times across 3 image builds instead of once — a few extra seconds of build time, not worth a shared base image for 3 services |
+| `APPLICATIONINSIGHTS_ROLE_NAME` set per-service via Helm values (not auto-detected) | Without it, all 3 services would show up under one generic cloud role name in Application Insights, making the Application Map and per-service queries far less useful | None — this is pure upside for a one-line value |
+| Probe `initialDelaySeconds` increased (30s→50s liveness, 20s→40s readiness) | The Java agent adds measurable startup overhead (bytecode instrumentation at class-load time) on top of Spring Security's own OIDC discovery call from Stage 5 | Slightly slower to detect a genuinely broken pod on startup — acceptable for a 3-pod dev cluster |
+| Scheduled query rules instead of classic metric alerts | Needed for both: 5xx rate requires querying the `requests` table's `resultCode` field (not a pre-aggregated metric), and the crash-loop alert needs `KubeEvents` from Container Insights — neither is a metric-alert-compatible signal | Slightly more setup than a metric alert, but the only mechanism that can express these specific conditions |
