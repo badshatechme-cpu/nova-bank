@@ -14,6 +14,20 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${NOVABANK_JWT_ISSUER_URI:https://login.microsoftonline.com/357b06c3-23ee-408a-a70b-57eaddc48aad/v2.0}
+
+# Second layer of defence-in-depth (APIM validates the token first; this service validates
+# it again rather than trusting the gateway alone). Claim and role names are configuration,
+# not hardcoded, so they can change without a code change.
+novabank:
+  security:
+    expected-audience: ${NOVABANK_JWT_AUDIENCE:bf3edf1a-2e04-4794-a3d3-5e516c5321ef}
+    customer-id-claim: ${NOVABANK_CUSTOMER_ID_CLAIM:extn.customerId}
+    staff-role: ${NOVABANK_STAFF_ROLE:NovaBank.Staff}
 
 management:
   endpoints:

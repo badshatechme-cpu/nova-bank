@@ -1,11 +1,14 @@
 package com.novabank.customer.api;
 
 import com.novabank.customer.api.dto.CreateCustomerRequest;
+import com.novabank.customer.config.TestJwtSupport;
+import com.novabank.customer.config.TestSecurityConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -20,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestSecurityConfig.class)
 class CustomerControllerIT {
 
     @Container
@@ -43,6 +47,7 @@ class CustomerControllerIT {
                 LocalDate.of(1990, 5, 14), "ARE");
 
         Map<?, ?> created = client.post().uri("/api/v1/customers")
+                .header("Authorization", "Bearer " + TestJwtSupport.staffToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
                 .exchange()
@@ -57,12 +62,14 @@ class CustomerControllerIT {
         assertThat(created.get("kycStatus")).isEqualTo("PENDING");
 
         client.get().uri("/api/v1/customers/{id}", id)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(id))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
                 .value(body -> assertThat(body.get("email")).isEqualTo("fatima.almarri@example.com"));
 
         client.get().uri("/api/v1/customers?search=fatima")
+                .header("Authorization", "Bearer " + TestJwtSupport.staffToken())
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
@@ -75,6 +82,7 @@ class CustomerControllerIT {
                 "", "not-an-email", "", LocalDate.now().plusDays(1), "ARE");
 
         client.post().uri("/api/v1/customers")
+                .header("Authorization", "Bearer " + TestJwtSupport.staffToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(invalid)
                 .exchange()
@@ -83,7 +91,26 @@ class CustomerControllerIT {
 
     @Test
     void getUnknownCustomerReturns404() {
+        UUID randomId = UUID.randomUUID();
+        client.get().uri("/api/v1/customers/{id}", randomId)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(randomId.toString()))
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    void noTokenReturns401() {
         client.get().uri("/api/v1/customers/{id}", UUID.randomUUID())
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void mismatchedCustomerIdClaimReturns404() {
+        UUID pathId = UUID.randomUUID();
+        UUID differentTokenCustomerId = UUID.randomUUID();
+        client.get().uri("/api/v1/customers/{id}", pathId)
+                .header("Authorization", "Bearer " + TestJwtSupport.tokenFor(differentTokenCustomerId.toString()))
                 .exchange()
                 .expectStatus().isNotFound();
     }

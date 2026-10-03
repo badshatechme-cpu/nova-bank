@@ -1,0 +1,78 @@
+### NovaBank Stage 5 — security scenarios through APIM
+### Requires the VS Code "REST Client" extension (or any .http-compatible client).
+###
+### Demonstrates the four scenarios from the Stage 5 build plan, all through the APIM
+### gateway (not direct to the services) — proving APIM's JWT validation and each
+### service's own ownership check both actually work end to end.
+###
+### Uses the Resource Owner Password Credentials (ROPC) grant purely for scripted test
+### convenience — never use ROPC in a real application; it's deprecated by Microsoft for
+### production use because it trains users to type passwords into arbitrary clients.
+
+@tenantId = 357b06c3-23ee-408a-a70b-57eaddc48aad
+@clientId = bf3edf1a-2e04-4794-a3d3-5e516c5321ef
+@gateway = https://nb-dev-apim.azure-api.net
+
+@testUser1 = novabank-test1@mibbrahim45gmail.onmicrosoft.com
+@testUser1Password = {{$dotenv NOVABANK_TEST1_PASSWORD}}
+@testUser1CustomerId = 0b337c49-d82e-4303-8ae6-5cd0daa63a3f
+
+@testUser2CustomerId = ff58781a-7832-43c4-b3db-de1dc4fecdbb
+
+###
+# @name tokenFullScope
+# Acquires a token for test user 1 with all four scopes consented.
+POST https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id={{clientId}}
+&username={{testUser1}}
+&password={{testUser1Password}}
+&scope=api://{{clientId}}/accounts.read api://{{clientId}}/cards.read api://{{clientId}}/cards.write api://{{clientId}}/transfers.write
+
+###
+# @name tokenReadOnly
+# Acquires a token for the SAME user but requesting only accounts.read — used below to
+# prove the "missing scope" scenario (this token genuinely cannot do transfers.write).
+POST https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id={{clientId}}
+&username={{testUser1}}
+&password={{testUser1Password}}
+&scope=api://{{clientId}}/accounts.read
+
+###
+# Scenario 1: own data works (200)
+# test user 1's token, requesting test user 1's own accounts.
+GET {{gateway}}/account/api/v1/customers/{{testUser1CustomerId}}/accounts
+Authorization: Bearer {{tokenFullScope.response.body.$.access_token}}
+
+###
+# Scenario 2: another customer's data returns 404 (not 403 — never confirm the resource
+# exists). test user 1's token, requesting test user 2's accounts.
+GET {{gateway}}/account/api/v1/customers/{{testUser2CustomerId}}/accounts
+Authorization: Bearer {{tokenFullScope.response.body.$.access_token}}
+
+###
+# Scenario 3: missing scope returns 403.
+# The read-only token has no transfers.write scope — APIM's account-api policy rejects
+# this before the request ever reaches account-service.
+POST {{gateway}}/account/api/v1/customers/{{testUser1CustomerId}}/transfers
+Authorization: Bearer {{tokenReadOnly.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: http-test-scenario-3
+
+{
+  "fromAccountId": "00000000-0000-0000-0000-000000000000",
+  "toAccountId": "00000000-0000-0000-0000-000000000000",
+  "amount": 10.00,
+  "currency": "AED",
+  "narration": "Should be rejected for missing scope"
+}
+
+###
+# Scenario 4: no token returns 401.
+GET {{gateway}}/account/api/v1/customers/{{testUser1CustomerId}}/accounts

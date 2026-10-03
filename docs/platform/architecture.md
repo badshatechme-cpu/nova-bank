@@ -175,3 +175,52 @@ flowchart TB
 | Deterministic secrets instead of `newGuid()` | `newGuid()` is the textbook Bicep pattern for *first-time* secret generation, but nothing in that pattern stops it from firing again on every later redeploy — we hit that the hard way | Secure-parameter-default linter warning (expected and accepted — the whole point is that these are *not* fresh randomness each run) |
 | CSI secret rotation left disabled | Keeps the cluster simpler and avoids an extra reconciliation loop running constantly for a 3-pod dev cluster | Any future password change requires manually deleting the synced Secret (documented in the runbook) rather than it refreshing on its own |
 | `nip.io` hostnames instead of path-based ingress routing | The account/card APIs nest under `/api/v1/customers/{id}/...`, the same prefix customer-service itself owns — simple path routing would collide between services | Not a real custom domain; Stage 5's APIM replaces this with proper OpenAPI-aware routing |
+
+## Stage 5 — API Management and Entra ID security
+
+```mermaid
+flowchart LR
+    client((Client))
+    apim[APIM Consumption tier<br/>validate-jwt: issuer + audience<br/>per-API: scope check]
+    entra[(Entra ID)]
+    cs[customer-service]
+    as[account-service]
+    ks[card-service]
+
+    client -- "Bearer token" --> apim
+    client -. "ROPC token request" .-> entra
+    apim -- "customer/*" --> cs
+    apim -- "account/*" --> as
+    apim -- "card/*" --> ks
+    cs & as & ks -- "validates JWT again<br/>+ ownership check" --> entra
+```
+
+| Resource | Name | Purpose |
+|---|---|---|
+| Entra ID app registration | `NovaBank API` | Exposes 4 delegated scopes (`accounts.read`, `cards.read`, `cards.write`, `transfers.write`) and app role `NovaBank.Staff`; configured as its own public test client for ROPC |
+| Directory extension attribute | `extension_<appid>_customerId` (configured name) | Maps each test user to a real seeded customer; emitted in access tokens — see the claim-name gotcha below |
+| APIM | `nb-dev-apim`, Consumption tier | 3 APIs (one per service, imported from each service's live OpenAPI spec), one product (`novabank`) grouping all 3, `validate-jwt` at product level (issuer + audience) and per-API (scope, by HTTP method) |
+| Services | all 3 | Added `spring-boot-starter-oauth2-resource-server`: validates the JWT a second time (issuer + audience, defence in depth), then an `OwnershipCheckFilter` compares the token's customerId claim to the path, 404 on mismatch, `NovaBank.Staff` role bypasses it |
+
+**APIM routing:** each service's OpenAPI spec is imported as its own API with a distinct path prefix (`/customer`, `/account`, `/card`) rather than reusing the `nip.io`-per-hostname trick from Stage 4. APIM matches by the API's *own* path namespace plus each operation's full route template, so the account/card services nesting under `/api/v1/customers/{id}/...` — the same prefix customer-service itself owns — doesn't collide the way it would with simple ingress path-prefix routing.
+
+### What actually went wrong, and the fixes (all real, all worth keeping)
+
+| Problem | Root cause | Fix |
+|---|---|---|
+| APIM deployment failed: `'POST' is an unexpected token` | A C# policy expression's `condition="@(context.Request.Method == "POST")"` has unescaped double quotes colliding with the XML attribute's own delimiter — invalid XML despite matching Microsoft's own documented examples verbatim | Escaped as `&quot;POST&quot;`. Later, a `GetValueOrDefault<Jwt>(...)` generic also needed `&lt;`/`&gt;` escaping for the same reason |
+| APIM deployment failed: two APIs can't share the same empty path | All 3 services' OpenAPI specs were imported with `path: ''`, and APIM requires a unique (path, protocol, type) tuple per API regardless of whether the underlying operations would actually disambiguate | Gave each API a distinct path (`customer`/`account`/`card`) — APIM strips its own path prefix before forwarding to the backend, so this doesn't affect the services at all |
+| First API calls through APIM returned `404 Resource not found` on some APIs but not others | Not a bug — newly-*created* APIM resources (the ones that failed and were recreated) take a few minutes to propagate to the Consumption tier's actual gateway runtime; an API that already existed from an earlier partial deploy (just updated) was unaffected | Waited ~5 minutes; confirmed via a request to a *different* operation on the same API that didn't depend on the lagging config |
+| Every request returned `401` even with a freshly-issued, valid token | APIM's `apiAudience` was configured as the Application ID URI (`api://<appid>`), but Entra ID issues the `aud` claim as the **raw GUID** for a self-referential app (one acting as both the API and its own test client) — the URI form only applies when client and resource are separate apps | Changed the configured audience to the raw app ID everywhere (APIM policy, all 3 services' `expected-audience`, test token helpers) |
+| Scope-restricted token still had all 4 scopes; "missing scope" test couldn't produce a real 403 | ROPC against this self-referential app returns the full admin-consented scope grant regardless of the narrower `scope` parameter requested — expected Entra ID behaviour for this app shape, not a bug | Created a second, minimal "test client" app registration granted only `accounts.read`, used for the one scenario that specifically needs a token missing a scope |
+| `<validate-jwt required-claims>` never matched a specific scope even though the token genuinely had it | Entra ID's `scp` claim is **one space-delimited string** (`"accounts.read cards.read ..."`), not a JSON array — `required-claims` does an exact match against the whole claim value, which a single scope name can never equal | Replaced with an expression-based check: `output-token-variable-name="jwt"` on the product-level `validate-jwt`, then `jwt.Claims.GetValueOrDefault("scp", new string[0]).Any(s => s.Split(' ').Contains(required))` at the API level |
+| The `customerId` claim never appeared in issued tokens, for what looked like 30+ minutes | Two independent bugs, not propagation delay: (1) `optionalClaims` for a directory extension attribute needs `"source": "user"` explicitly — `source: null` (correct for built-in claims) silently does nothing for extension attributes; (2) once fixed, the claim appears under the **abbreviated name `extn.customerId`**, not the full `extension_<appid>_customerId` form used everywhere in Graph API configuration — and as a single-element **array**, not a plain string | Fixed `source`, then changed every service's `customer-id-claim` config to `extn.customerId` and updated `OwnershipCheckFilter` to read it as a list and take the first element |
+
+### Decisions
+| Decision | Why | Trade-off |
+|---|---|---|
+| APIM Consumption tier | True pay-per-call pricing (~$0 at portfolio-demo volume, first 1M calls/month free) — explicitly chosen over Developer (~$50/month flat) or Standard v2 (~$73/month flat) given the stated goal of minimizing cost | No VNet integration at all; Stage 7's private-networking goals will need either a tier swap or accepting APIM outside the VNet |
+| One APIM product grouping all 3 service APIs | Matches the build plan's "one API product" framing and keeps a single place to apply the base JWT check and rate limit | Per-service API-level policies still needed for per-operation scope requirements — the product-level policy alone can't distinguish between services |
+| Scope required by HTTP method, not by operation | Each service's write operations all happen to be `POST` and its reads `GET` — a method-based rule covers every current operation without needing to know APIM's auto-generated per-operation resource names (unavailable until after the OpenAPI import completes) | Not fully general — a future `PATCH`/`PUT` operation would need the policy extended, not just the OpenAPI spec |
+| 404 (not 403) on ownership mismatch | Explicit requirement in `CLAUDE-PLATFORM.md`: don't let the status code confirm a resource exists for a customer that isn't the caller | A genuinely malformed/missing resource and someone else's resource are indistinguishable to the caller — intentional |
+| `NovaBank.Staff` role checked before the ownership comparison, not instead of real auth | Staff tokens still go through full JWT validation (issuer, audience, signature) — the bypass only skips the *customerId-vs-path* check, nothing else | None meaningful — this is the intended behaviour |

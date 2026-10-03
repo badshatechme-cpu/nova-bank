@@ -33,6 +33,9 @@ param allowedClientIp string
 @description('Object ID of the owner, granted Key Vault Secrets Officer so deployments can write secrets.')
 param ownerPrincipalId string
 
+@description('Application ID URI of the NovaBank API Entra ID app registration (Stage 5).')
+param entraApiAudience string = ''
+
 // Deterministic (not newGuid()): newGuid() re-evaluates on every `az deployment sub
 // create` run, silently rotating these on every unrelated redeploy and desyncing Key
 // Vault from the actual Postgres role passwords set by create-db-roles.sh. uniqueString()
@@ -198,7 +201,29 @@ module cardServiceIdentity 'modules/serviceIdentity.bicep' = {
   }
 }
 
+// The ingress IP is hardcoded here, not derived as a Bicep output, because it's
+// auto-assigned by the App Routing add-on after AKS deploys — not knowable at
+// Bicep-authoring time. If the cluster is ever rebuilt, update these hostnames
+// (and the Helm values-*.yaml ingress.host values) to match the new IP.
+module apim 'modules/apim.bicep' = {
+  name: 'apim'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    apimName: 'nb-${environmentName}-apim'
+    publisherEmail: ownerEmail
+    publisherName: 'NovaBank'
+    tenantId: subscription().tenantId
+    apiAudience: entraApiAudience
+    customerServiceUrl: 'http://customer.20.233.234.238.nip.io'
+    accountServiceUrl: 'http://account.20.233.234.238.nip.io'
+    cardServiceUrl: 'http://card.20.233.234.238.nip.io'
+  }
+}
+
 output resourceGroupName string = rg.name
+output apimGatewayUrl string = apim.outputs.gatewayUrl
 output logAnalyticsWorkspaceId string = logAnalytics.outputs.workspaceId
 output acrLoginServer string = containerRegistry.outputs.loginServer
 output acrName string = containerRegistry.outputs.registryName
