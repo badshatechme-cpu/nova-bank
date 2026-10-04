@@ -20,12 +20,7 @@ resources:
     memory: 256Mi
   limits:
     cpu: 500m
-    # 512Mi was enough pre-Stage-6; the App Insights Java agent's own background
-    # threads (telemetry batching/export) push steady-state RSS past that, causing
-    # a cgroup OOM kill (exit 137) a few seconds after a clean startup. Bumped to
-    # give the agent headroom — request stays at 256Mi since the node has no spare
-    # request capacity for 3 replicas at a higher reservation.
-    memory: 768Mi
+    memory: 512Mi
 
 serviceAccount:
   name: "" # e.g. customer-service — must match the federated credential's subject
