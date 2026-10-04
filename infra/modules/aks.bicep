@@ -43,9 +43,9 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-08-01' = {
     dnsPrefix: clusterName
     agentPoolProfiles: [
       {
-        name: 'system'
+        name: 'sysv7'
         count: 1
-        vmSize: 'Standard_D2als_v6'
+        vmSize: 'Standard_D4als_v7'
         mode: 'System'
         osType: 'Linux'
       }

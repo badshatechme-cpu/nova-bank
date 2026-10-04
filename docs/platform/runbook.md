@@ -456,18 +456,29 @@ Java agent only takes effect once the new images with the updated Dockerfiles ar
 - **5xx rate:** call an endpoint that returns a 5xx more than 5 times within 5 minutes
   (e.g., a transfer with an invalid currency repeatedly), then check **Monitor → Alerts**
   in the portal, or wait for the email.
-- **Pod crash loop:** intentionally break a pod (e.g., temporarily set a wrong
-  `SPRING_DATASOURCE_URL` in a values file and redeploy) and watch for the alert within
-  5 minutes, then revert.
+- **Pod crash loop:** create a throwaway pod that exits immediately, which produces the
+  `BackOff` events the alert watches, then delete it:
+  `kubectl run alert-test-crash -n novabank --image=mcr.microsoft.com/mirror/docker/library/busybox:1.35 --restart=Always --command -- sh -c 'exit 1'`
+  The alert fires after Container Insights ingests the event and the next 5-minute
+  evaluation runs (expect roughly 5-15 minutes). Clean up with
+  `kubectl delete pod alert-test-crash -n novabank`.
 
 ### Troubleshooting
 
-- **Pods take noticeably longer to become ready after this stage** — expected. The Java
-  agent adds real startup overhead (bytecode instrumentation at class-load time). The
-  Helm chart's `initialDelaySeconds` was bumped (50s liveness, 40s readiness) to
-  accommodate; if pods still fail readiness, check `kubectl logs` for the agent actually
-  attaching (`ApplicationInsights-LogLevel` logs on startup) rather than assuming it's
-  hung.
+- **Pods crash-loop right after this stage's rollout (exit code 137, `Liveness probe failed:
+  context deadline exceeded` in `kubectl get events`)** — this is NOT an out-of-memory kill,
+  even though exit 137 looks like one (it is SIGKILL, which kubelet also sends after a
+  failed liveness probe). The node is CPU-starved, so JVM + Java agent startup takes ~65s
+  and probes answer slowly; the original 1s-timeout liveness probe killed pods before they
+  finished starting. Fix in the Helm chart: a `startupProbe` (30 x 10s) holds off liveness,
+  and probe timeouts are 5s. Confirm the real cause with `kubectl get events -n novabank`
+  before touching memory limits; raising the limit from 512Mi to 768Mi made no difference.
+- **New pods stuck `Pending` ("Insufficient memory") after every deploy** — the node has
+  almost no spare request capacity, so a rolling update deadlocks: the old pod holds its
+  reservation until the new one is Ready. Workaround after each deploy: find the old
+  ReplicaSets with `kubectl get rs -n novabank` and run
+  `kubectl scale replicaset <old-rs> -n novabank --replicas=0` for each service. Also
+  delete leftover `Error` / `ContainerStatusUnknown` pods.
 - **No data in Application Insights despite pods running fine** — confirm
   `APPLICATIONINSIGHTS_CONNECTION_STRING` actually resolved: `kubectl exec` into a pod (or
   check its env via `kubectl describe pod`) and verify the env var is non-empty. If it's
