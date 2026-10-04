@@ -478,7 +478,39 @@ Java agent only takes effect once the new images with the updated Dockerfiles ar
   reservation until the new one is Ready. Workaround after each deploy: find the old
   ReplicaSets with `kubectl get rs -n novabank` and run
   `kubectl scale replicaset <old-rs> -n novabank --replicas=0` for each service. Also
-  delete leftover `Error` / `ContainerStatusUnknown` pods.
+  delete leftover `Error` / `ContainerStatusUnknown` pods. This was fixed properly by
+  resizing the node to 4 vCPU / 8GB (`Standard_D4als_v7`), so it should no longer occur.
+- **Pods crash at startup with `remaining connection slots are reserved for roles with
+  privileges of the "pg_use_reserved_connections" role`** — Postgres Burstable B1ms allows
+  only 50 connections. Check usage with
+  `az monitor metrics list --resource <server id> --metric active_connections`. Pools from
+  pods that were killed without closing (a deleted node, SIGKILL) linger on the server and
+  can fill it; `az postgres flexible-server restart -g nb-dev-rg -n nb-dev-psql` clears
+  them. The Helm chart caps each service's pool at 5
+  (`database.maxPoolSize` -> `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE`), which gives
+  ~15 connections steady and ~30 during a rollout. Do not raise it without checking the
+  50 limit. Steady state is ~23 on the metric (15 app + ~8 Azure baseline).
+
+### Verified results (Stage 6)
+
+One authenticated request, followed in `nb-dev-appinsights` (Transaction search), shows
+the request on `account-service`, an HTTP dependency to `login.microsoftonline.com`
+(first call only, ~380 ms, fetching Entra's token-signing keys), and the PostgreSQL
+dependency (`select ... from accounts` on `account_db`). First call ~737 ms, later calls
+~8 ms. APIM does not appear in the trace because it is not wired to Application Insights
+(no logger or diagnostic in `infra/modules/apim.bicep`).
+
+### Running the `.http` scenarios
+
+`docs/platform/stage5-security-scenarios.http` reads the test user's password from
+`docs/platform/.env` (`NOVABANK_TEST1_PASSWORD`, gitignored). REST Client puts the value
+into a form body without encoding, so a password containing `&`, `+` or `%` fails with
+`AADSTS50126` even when correct. Store it percent-encoded:
+
+```bash
+PW=$(az keyvault secret show --vault-name <keyVaultName> --name novabank-test1-password --query value -o tsv)
+printf 'NOVABANK_TEST1_PASSWORD=%s\n' "$(printf %s "$PW" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')" > docs/platform/.env
+```
 - **No data in Application Insights despite pods running fine** — confirm
   `APPLICATIONINSIGHTS_CONNECTION_STRING` actually resolved: `kubectl exec` into a pod (or
   check its env via `kubectl describe pod`) and verify the env var is non-empty. If it's
