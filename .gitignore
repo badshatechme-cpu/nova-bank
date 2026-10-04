@@ -5,5 +5,8 @@ target/
 .vscode/
 .DS_Store
 
+# Local secrets for the .http test files (e.g. the Entra test user's password)
+.env
+
 # Leftover duplicate of the root CLAUDE.md/BUILD_PLAN.md from initial project setup
 files/
