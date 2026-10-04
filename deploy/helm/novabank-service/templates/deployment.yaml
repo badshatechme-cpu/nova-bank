@@ -30,6 +30,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.serviceAccount.name }}-db-secret
                   key: password
+            - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+              value: {{ .Values.database.maxPoolSize | quote }}
             - name: APPLICATIONINSIGHTS_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
