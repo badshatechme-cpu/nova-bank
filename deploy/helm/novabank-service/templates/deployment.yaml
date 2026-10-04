@@ -44,21 +44,29 @@ spec:
             limits:
               cpu: {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
+          # On this CPU-starved single node (20m request) the JVM plus the App Insights
+          # agent needs 60-90s to start and answers probes slowly. The startup probe holds
+          # off liveness until the app is up; without it kubelet kills the pod mid-startup.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.containerPort }}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: {{ .Values.containerPort }}
-            # Bumped from 30s/20s: the Application Insights Java agent adds measurable
-            # startup overhead (class-loading instrumentation) on top of Spring Security's
-            # own OIDC discovery call.
-            initialDelaySeconds: 50
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: {{ .Values.containerPort }}
-            initialDelaySeconds: 40
             periodSeconds: 10
+            timeoutSeconds: 5
           volumeMounts:
             - name: secrets-store
               mountPath: "/mnt/secrets-store"
