@@ -36,6 +36,9 @@ database:
   name: "" # e.g. customer_db
   username: "" # e.g. customer_app
   passwordSecretName: "" # the Key Vault secret name, e.g. customer-db-password
+  # Postgres Burstable B1ms allows 50 connections total. HikariCP defaults to 10 per pod,
+  # and during a rolling update old and new pods overlap, so cap each pool well below that.
+  maxPoolSize: 5
 
 ingress:
   host: "" # e.g. customer.<ingress-ip>.nip.io
