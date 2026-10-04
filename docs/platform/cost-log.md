@@ -86,7 +86,8 @@ now exceeds that original threshold, not a false alarm.
 | Application Insights `nb-dev-appinsights` | Workspace-based | $0 (resource itself) | Billed as Log Analytics ingestion, same meter and same 1GB/day cap as Stage 4's Container Insights |
 | Additional log ingestion (traces, requests, dependencies) | — | ~$0-3/month | Expected to stay well under the 1GB/day cap at portfolio-demo request volume |
 | Workbook, 2 alerts, 1 action group | — | $0 | All free; alerts only cost anything per-notification at a much higher volume than email |
-| **Stage 6 total** | | **~$0-3/month** | |
+| Node pool resize: `Standard_D2als_v6` → `Standard_D4als_v7` | 4 vCPU / 8GB | ~+$72/month if run continuously (~+$0.10/hour) | **Unplanned.** The 2 vCPU node was ~98% CPU-reserved and could not keep even system pods healthy once the Java agent was added. `Standard_D4als_v6` is `NotAvailableForSubscription` in uaenorth, so the v7 successor was used. Price is an estimate (about double the D2als_v6 line in Stage 4); Azure's live price list did not respond, so confirm against the first bill. Billed hourly, so cost tracks hours running — `stop.sh` still applies |
+| **Stage 6 total (running continuously)** | | **~$72-75/month** | Almost all of it is the node resize. At ~20 hours of use a month the extra is roughly $2 |
 
 **Observed:** _(fill in after a billing cycle)_
 
@@ -99,4 +100,4 @@ now exceeds that original threshold, not a false alarm.
 | 3 — Database and secrets | ~$12-20 (if left running) | ~$17-25 |
 | 4 — AKS and first deployment | ~$99-113 (if left running) | ~$116-138 |
 | 5 — APIM and Entra ID security | ~$0 | ~$116-138 |
-| 6 — Observability | ~$0-3 | ~$116-141 |
+| 6 — Observability (incl. node resize) | ~$72-75 (if left running) | ~$188-213 |
